@@ -1,0 +1,197 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('express-socket:server');
+var http = require('http');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+
+//使用socket.io
+var io = require('socket.io')(server);
+//监听 socket 连接事件
+//存储socket 连接对象，由于socketID 是唯一的，所以我们使用socketID 作为key
+var onlineUserCount = 0;//客户端连接数量
+var onlineUsers = {};//统计客户端登录用户
+
+//监听连接
+io.on('connection',function(socket){  
+  socket.emit('open');//通知客户端已连接
+
+  //构造客户端对象
+  var client = {
+    socket:socket,
+    name:false
+  };
+
+  //监听 chat message 事件,由客户端触发
+  socket.on('chat message',function(msg){
+    console.log('message: ',msg);
+
+    //构造客户端返回的对象
+    var obj = {
+      time : getTime()
+    };
+
+    //判断是不是第一次连接，以第一个消息作为昵称
+    if(!client.name){
+      if(onlineUsers.hasOwnProperty(msg)){
+        obj.text = msg+' 已被使用';
+        obj.author = 'Sys';
+        obj.type = 'error';
+        socket.emit('system',obj);
+      }else{
+        onlineUserCount++;
+        client.name = msg;
+        obj.text = client.name;
+        obj.author = 'Sys';
+        obj.type = 'welcome';
+        obj.onlineUserCount = onlineUserCount;
+        obj.name = client.name;//用户连接后设置name,退出时删除该用户
+  
+        if(!onlineUsers.hasOwnProperty(client.name)){
+          onlineUsers[client.name] = client.name;
+        }
+        obj.onlineUsers = onlineUsers;
+  
+        //返回欢迎语
+        socket.emit('system',obj);//发给自己的消息
+  
+        //广播新用户已登录
+        socket.broadcast.emit('system',obj);//向其他用户发送消息
+      }      
+    }else{
+      //如果不是第一次聊天，则返回正常聊天消息
+      obj.text = msg;
+      obj.author = client.name;
+      obj.type = 'message';
+
+      console.log(client.name,' say: ',msg);
+
+      socket.emit('chat message',obj);//给自己发送消息
+      socket.broadcast.emit('chat message',obj);//向其他用户发送消息
+    }
+  });
+
+  //监听离线事件
+  socket.on('disconnect', function(msg){
+    if(client.name){
+      if (onlineUserCount>0) onlineUserCount--;
+
+      if(onlineUsers.hasOwnProperty(client.name)){
+        delete onlineUsers[client.name];
+      }
+ 
+      var obj = {
+        time : getTime(),
+        author:'Sys',
+        text:client.name,
+        type:'disconnect',
+        onlineUserCount:onlineUserCount,
+        onlineUsers:onlineUsers
+      };
+ 
+      //广播用户退出
+      socket.broadcast.emit('system',obj);//用户登录和退出都用system 事件播报
+      console.log(client.name,' 离开聊天室,当前在线人数： ',onlineUserCount);
+    }else{
+      return false;
+    }
+     
+  });
+});
+
+function getTime(){
+  var date = new Date();
+  return date.getHours()+":"+date.getMinutes()+":"+date.getSeconds();
+};
+
+function getColor(){
+  var colors = ['aliceblue','antiquewhite','aqua','aquamarine','pink','red','green',
+                'orange','blue','blueviolet','brown','burlywood','cadetblue'];
+  return colors[Math.round(Math.random() * 10000 % colors.length)];
+};
+
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+console.log("http://localhost:"+port);
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}

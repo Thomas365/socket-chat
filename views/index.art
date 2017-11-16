@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Socket.IO chat</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }     
+      body { font: 13px Helvetica, Arial; }
+      div { background: #000; padding: 3px; position: fixed; bottom: 0; width: 100%; }
+      div input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
+      div button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
+      .title{
+          font-size:24px;
+          line-height: 60px;
+          color: skyblue;
+          text-align: center;
+      }
+      #messages { list-style-type: none; margin-bottom: 60px; padding: 0; }
+      #messages li { padding: 5px 10px; }
+      #messages li:nth-child(odd) { background: #eee; }
+      p{padding:5px 10px;}
+    </style>
+  </head>
+  <body>
+    <h1 class="title">简易聊天室</h1>
+    <p id="onlineUser"></p>
+    <ul id="messages"></ul>    
+    <div action="">
+      <input id="m" autocomplete="off" /><button>Send</button>
+    </div>
+    <script src="https://cdn.bootcss.com/socket.io/2.0.4/socket.io.js"></script>
+    <script src="https://cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script>
+    <script type="text/javascript">
+        $(function(){
+            var myName=false;
+        
+            var socket= io('http://localhost:3000');
+            socket.on('open',function(){
+                $('#messages').append($('<li>').text('已连接至服务器,请输入昵称'));
+                autoScroll();
+            });
+
+            //监听system事件，判断welcome或者disconnect，打印系统消息
+            socket.on('system',function(json){
+                var sep='';
+                var onlinehtml='';
+                var onlineUsers=json.onlineUsers;
+                for(key in onlineUsers){
+                    if(onlineUsers.hasOwnProperty(key)){
+                    onlinehtml+=sep+onlineUsers[key];
+                    sep='、';
+                    }
+                }
+                if(json.type == 'error'){
+                    $('#messages').append($('<li>').text(json.text));
+                    autoScroll();    
+                }
+                
+                if(json.type === 'welcome'){
+                    $('#messages').append($('<li>').text('Sys ('+json.time+') welcome '+json.text));           
+                    $('#onlineUser').text('在线人数: '+json.onlineUserCount+' ,在线列表: '+onlinehtml);
+                    autoScroll();
+                }else if(json.type==='disconnect'){
+                    $('#messages').append($('<li>').text('Sys ('+json.time+') bye '+json.text+''));     
+                    $('#onlineUser').text('在线人数: '+json.onlineUserCount+' ,在线列表: '+onlinehtml);
+                    autoScroll();
+                }
+            });
+
+            //监听服务端的chat message事件，接受每一条消息
+            socket.on('chat message',function(json){                
+                $('#messages').append($('<li>').text(json.author+' ('+json.time+')'+' : '+json.text));
+                autoScroll();
+            });
+
+
+            $('#m').keydown(function(e){
+                if(e.keyCode===13){
+                    socket.emit('chat message',$('#m').val());
+                    
+                    //socket.send($('#m').val());
+                    $('#m').val('');
+                    if(myName===false){
+                    myName=$('#m').val();
+                    }
+                }
+            })
+
+            //自动滚动页面
+            function autoScroll(){
+                var $document = $(document);                
+                $document.scrollTop($document.height());
+            }
+        })
+    </script>
+  </body>
+</html>
